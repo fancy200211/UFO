@@ -1,0 +1,5 @@
+time,release,env,tenant,event,details
+2026-10-26T16:55:00+08:00,r42,prod,alpha,STAGED,files copied but not active
+2026-10-26T17:00:00+08:00,r42,prod,alpha,ACTIVATED,override.conf becomes effective
+2026-10-26T17:07:00+08:00,r43,prod,alpha,PROPOSED,timeout 2000; not activated
+2026-10-26T17:12:00+08:00,r41,prod,alpha,ROLLED_BACK,after the investigation window

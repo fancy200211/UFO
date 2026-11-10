@@ -2,11 +2,13 @@
 # Licensed under the MIT License.
 
 import logging
+import time
 from ufo.llm import AgentType
 from typing import Tuple
 
 from .base import BaseService
 from .config_helper import get_agent_config
+from config.config_loader import get_ufo_config
 
 logger = logging.getLogger(__name__)
 
@@ -90,14 +92,30 @@ def get_completions(
 
     try:
         api_type_lower = api_type.lower()
-        service = BaseService.get_service(api_type_lower, agent_type, api_model.lower())
+        started = time.perf_counter()
+        logger.warning("[LATENCY] service_init_start agent=%s model=%s", agent_type, api_model)
+        try:
+            service = BaseService.get_service(api_type_lower, agent_type, api_model.lower())
+        finally:
+            logger.warning(
+                "[LATENCY] service_init_end agent=%s model=%s elapsed_s=%.3f",
+                agent_type, api_model, time.perf_counter() - started,
+            )
         if service:
-            response, cost = service.chat_completion(messages, n)
+            started = time.perf_counter()
+            logger.warning("[LATENCY] completion_start agent=%s model=%s", agent_type, api_model)
+            try:
+                response, cost = service.chat_completion(messages, n)
+            finally:
+                logger.warning(
+                    "[LATENCY] completion_end agent=%s model=%s elapsed_s=%.3f",
+                    agent_type, api_model, time.perf_counter() - started,
+                )
             return response, cost
         else:
             raise ValueError(f"API_TYPE {api_type} not supported")
     except Exception as e:
-        if use_backup_engine:
+        if use_backup_engine and get_ufo_config().system.get("USE_BACKUP_ENGINE", True):
             logger.error(f"The API request of {agent_type} failed: {e}.")
             logger.warning(f"Switching to use the backup engine...")
             return get_completions(

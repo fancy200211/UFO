@@ -1,0 +1,12 @@
+event_id,event_time,env,tenant,route,request_id,attempt,outcome,reason
+e00,2026-10-26T16:59:59+08:00,prod,alpha,/checkout,r00,1,ERROR,OUTSIDE_WINDOW
+e01,2026-10-26T17:00:10+08:00,prod,alpha,/checkout,r01,1,OK,NONE
+e02,2026-10-26T17:01:00+08:00,prod,alpha,/checkout,r02,1,ERROR,PAYMENT_TIMEOUT
+e03,2026-10-26T17:01:02+08:00,prod,alpha,/checkout,r02,2,ERROR,PAYMENT_TIMEOUT
+e04,2026-10-26T17:02:00+08:00,prod,alpha,/checkout,r03,1,ERROR,PAYMENT_TIMEOUT
+e05,2026-10-26T17:02:02+08:00,prod,alpha,/checkout,r03,2,OK,NONE
+e06,2026-10-26T17:03:00+08:00,prod,alpha,/checkout,r04,1,ERROR,PAYMENT_TIMEOUT
+e07,2026-10-26T17:04:00+08:00,prod,alpha,/checkout,r05,1,OK,NONE
+e08,2026-10-26T17:04:30+08:00,prod,alpha,/health,h01,1,ERROR,PROBE_FAILED
+e09,2026-10-26T17:04:40+08:00,staging,alpha,/checkout,s01,1,ERROR,DATABASE_DOWN
+e10,2026-10-26T17:04:50+08:00,prod,beta,/checkout,b01,1,OK,NONE

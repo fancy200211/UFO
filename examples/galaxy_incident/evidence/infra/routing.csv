@@ -1,0 +1,4 @@
+env,tenant,route,release,config_source,payment_pool
+prod,alpha,/checkout,r42,override.conf,primary
+prod,beta,/checkout,r41,default.conf,primary
+staging,alpha,/checkout,r42,override.conf,test-isolated

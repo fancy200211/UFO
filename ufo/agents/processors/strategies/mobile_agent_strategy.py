@@ -650,6 +650,16 @@ class MobileLLMInteractionStrategy(AppLLMInteractionStrategy):
             annotated_screenshot_url = context.get_local("annotated_screenshot_url")
             plan = self._get_prev_plan(agent)
 
+            self.logger.warning(
+                "[LATENCY] mobile_data_ready log_path=%s step=%s "
+                "screenshot_s=%s apps_s=%s controls_s=%s apps=%d controls=%d",
+                context.get_local("log_path"), context.get_local("session_step", 0),
+                context.get_local("screenshot_saved_time"),
+                context.get_local("apps_collection_time"),
+                context.get_local("controls_collection_time"),
+                len(installed_apps), len(current_controls),
+            )
+
             # Build comprehensive prompt
             self.logger.info("Building Mobile Agent prompt")
 

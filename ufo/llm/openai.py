@@ -2,6 +2,10 @@
 # Licensed under the MIT License.
 
 import functools
+import httpx
+import threading
+import time
+import uuid
 import json
 import logging
 import os
@@ -12,7 +16,7 @@ import urllib.error
 import urllib.request
 from typing import Any, Callable, Dict, List, Literal, Optional, Tuple
 
-from openai import AzureOpenAI, OpenAI
+from openai import AzureOpenAI, OpenAI, DefaultHttpxClient
 from openai.lib._parsing._completions import type_to_response_format_param
 from ufo.llm.base import BaseService
 from ufo.llm.response_schema import (
@@ -23,6 +27,60 @@ from ufo.llm.response_schema import (
 from ufo.llm import AgentType
 
 logger = logging.getLogger(__name__)
+
+
+class _LatencyHttpxClient(DefaultHttpxClient):
+    """Log individual SDK HTTP attempts without logging payloads or credentials."""
+
+    def send(self, request: httpx.Request, **kwargs: Any) -> httpx.Response:
+        started = time.perf_counter()
+        attempt_id = uuid.uuid4().hex[:12]
+        failed_phase = None
+        headers_s = None
+        previous_trace = request.extensions.get("trace")
+
+        def trace(event: str, info: dict) -> None:
+            nonlocal failed_phase, headers_s
+            if event.endswith(".failed") and failed_phase is None:
+                failed_phase = event
+            if event.endswith("receive_response_headers.complete"):
+                headers_s = time.perf_counter() - started
+            if previous_trace is not None:
+                previous_trace(event, info)
+
+        request.extensions["trace"] = trace
+        logger.warning(
+            "[LATENCY_HTTP] start id=%s thread=%s retry_index=%s timeout=%s scope=%s",
+            attempt_id, threading.get_ident(),
+            request.headers.get("x-stainless-retry-count", "unknown"),
+            request.extensions.get("timeout"),
+            "headers_only" if kwargs.get("stream", False) else "full_response",
+        )
+        try:
+            response = super().send(request, **kwargs)
+        except Exception as exc:
+            logger.warning(
+                "[LATENCY_HTTP] error id=%s elapsed_s=%.3f error=%s "
+                "cause=%s phase=%s headers_s=%s",
+                attempt_id, time.perf_counter() - started, type(exc).__name__,
+                type(exc.__cause__).__name__ if exc.__cause__ else None,
+                failed_phase, headers_s,
+            )
+            raise
+        else:
+            logger.warning(
+                "[LATENCY_HTTP] end id=%s elapsed_s=%.3f status=%s "
+                "headers_s=%s request_id=%r retry_after=%r",
+                attempt_id, time.perf_counter() - started, response.status_code,
+                headers_s, response.headers.get("x-request-id"),
+                response.headers.get("retry-after"),
+            )
+            return response
+        finally:
+            if previous_trace is None:
+                request.extensions.pop("trace", None)
+            else:
+                request.extensions["trace"] = previous_trace
 
 
 class BaseOpenAIService(BaseService):
@@ -57,6 +115,7 @@ class BaseOpenAIService(BaseService):
             aad_api_scope_base=self.config_llm.get("AAD_API_SCOPE_BASE", ""),
             aad_tenant_id=self.config_llm.get("AAD_TENANT_ID", ""),
             use_responses=self.use_responses,
+            read_timeout=self.config.get("READ_TIMEOUT"),
         )
 
         self.model = self.config_llm["API_MODEL"]
@@ -415,6 +474,7 @@ class BaseOpenAIService(BaseService):
         aad_api_scope_base: Optional[str] = None,
         aad_tenant_id: Optional[str] = None,
         use_responses: bool = False,
+        read_timeout: Optional[float] = None,
     ) -> OpenAI:
         """
         Create an OpenAI client based on the API type.
@@ -426,12 +486,16 @@ class BaseOpenAIService(BaseService):
         :param api_version: The API version for the Azure OpenAI API.
         :param aad_api_scope_base: The AAD API scope base for the Azure OpenAI API.
         :param aad_tenant_id: The AAD tenant ID for the Azure OpenAI API.
+        :param read_timeout: Optional read timeout override in seconds.
         :return: The OpenAI client.
         """
+        if read_timeout is not None:
+            timeout = httpx.Timeout(timeout, read=read_timeout)
         if api_type == "openai":
             assert api_key, "OpenAI API key must be specified"
             assert api_base, "OpenAI API base URL must be specified"
             client = OpenAI(
+                http_client=_LatencyHttpxClient(),
                 base_url=api_base,
                 api_key=api_key,
                 max_retries=max_retry,

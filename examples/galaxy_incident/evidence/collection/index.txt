@@ -1,0 +1,5 @@
+采集批次 batch-204；当前日志已轮转，current.log 未随包导出。
+实际事件分片：collection/segment A.csv、collection/segment-B.csv。
+两份分片有重叠事件，不能简单相加。
+原始外部监控 metrics-live.csv 未随包交付；infra/metrics.csv 是内部探针快照，不可冒充外部原始监控。
+cache/latest-summary.txt 是可疑复制件；其 SHA256 应与 cache/checksums.txt 比较。

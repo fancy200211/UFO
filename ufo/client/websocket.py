@@ -156,9 +156,13 @@ class UFOWebSocketClient:
 
         # Collect device system information (no custom metadata from device side)
         try:
-            system_info = DeviceInfoProvider.collect_system_info(
+            # Mobile metadata can require a bounded ADB query. Keep registration
+            # I/O off the event loop so transport heartbeats remain responsive.
+            system_info = await asyncio.to_thread(
+                DeviceInfoProvider.collect_system_info,
                 self.ufo_client.client_id,
                 custom_metadata=None,  # Server will add custom metadata if configured
+                target_platform=self.ufo_client.platform,
             )
 
             # Prepare metadata with system info

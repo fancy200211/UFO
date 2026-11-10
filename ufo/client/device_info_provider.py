@@ -6,8 +6,10 @@ Supports Windows, Linux, macOS, and provides extensibility for mobile and IoT de
 """
 
 import logging
+import os
 import platform
 import socket
+import subprocess
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -26,7 +28,7 @@ class DeviceSystemInfo:
 
     # Basic identification
     device_id: str
-    platform: str  # windows, linux, darwin, android, ios, web
+    platform: str  # windows, linux, darwin, mobile, android, ios, web
     os_version: str
 
     # Hardware information (simplified)
@@ -64,15 +66,20 @@ class DeviceInfoProvider:
 
     @staticmethod
     def collect_system_info(
-        client_id: str, custom_metadata: Optional[Dict[str, Any]] = None
+        client_id: str, custom_metadata: Optional[Dict[str, Any]] = None,
+        *, target_platform: Optional[str] = None,
     ) -> DeviceSystemInfo:
         """
         Collect system information from the device.
 
         :param client_id: The device client ID
         :param custom_metadata: Optional custom metadata from configuration
+        :param target_platform: Registered client platform; mobile refers to the
+            Android device controlled over ADB, not the Python host.
         :return: DeviceSystemInfo object with collected information
         """
+        if target_platform == "mobile":
+            return DeviceInfoProvider._collect_mobile_info(client_id, custom_metadata)
         try:
             return DeviceSystemInfo(
                 device_id=client_id,
@@ -101,6 +108,40 @@ class DeviceInfoProvider:
                 platform_type="unknown",
                 custom_metadata=custom_metadata or {},
             )
+
+    @staticmethod
+    def _collect_mobile_info(
+        client_id: str, custom_metadata: Optional[Dict[str, Any]]
+    ) -> DeviceSystemInfo:
+        # Unknown fields use the existing schema's unknown/zero sentinels.
+        # Never substitute the host's hardware, network or desktop capabilities.
+        info = DeviceSystemInfo(
+            device_id=client_id,
+            platform="mobile",
+            os_version="unknown",
+            cpu_count=0,
+            memory_total_gb=0.0,
+            hostname="unknown",
+            ip_address="unknown",
+            supported_features=["mobile", "android", "mobile_touch", "mobile_apps"],
+            platform_type="mobile",
+            custom_metadata=custom_metadata or {},
+        )
+        serial = os.environ.get("ANDROID_SERIAL")
+        command = ["adb", *(["-s", serial] if serial else []),
+                   "shell", "getprop", "ro.build.version.release"]
+        try:
+            result = subprocess.run(
+                command, capture_output=True, text=True, encoding="utf-8",
+                timeout=5, check=True,
+            )
+            version = result.stdout.strip()
+            if version:
+                info.os_version = f"Android {version}"
+        except (OSError, subprocess.SubprocessError, UnicodeError) as exc:
+            # Missing/offline/ambiguous ADB devices must not turn this into Linux.
+            logger.warning("Android version unavailable (%s); retaining Mobile identity", type(exc).__name__)
+        return info
 
     @staticmethod
     def _get_platform() -> str:

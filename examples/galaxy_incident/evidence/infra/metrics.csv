@@ -1,0 +1,8 @@
+time_utc,env,metric,value,unit
+2026-10-26T08:50:00Z,prod,payment_p95,1100,ms
+2026-10-26T09:04:00Z,prod,payment_p95,1100,ms
+2026-10-26T09:04:00Z,prod,database_reachable,1,bool
+2026-10-26T09:04:00Z,prod,database_p95,12,ms
+2026-10-26T09:04:00Z,prod,database_connection_utilization,25,percent
+2026-10-26T09:04:00Z,prod,payment_pool_reachable,1,bool
+2026-10-26T09:04:00Z,staging,database_reachable,0,bool

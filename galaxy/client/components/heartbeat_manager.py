@@ -12,6 +12,7 @@ import asyncio
 import logging
 from typing import Dict
 
+from aip.messages import ClientType
 from aip.protocol.heartbeat import HeartbeatProtocol
 
 from .connection_manager import WebSocketConnectionManager
@@ -75,7 +76,9 @@ class HeartbeatManager:
 
                 # Send heartbeat using AIP HeartbeatProtocol
                 await protocol.send_heartbeat(
-                    client_id=client_id, metadata={"device_id": device_id}
+                    client_id=client_id,
+                    metadata={"device_id": device_id},
+                    client_type=ClientType.CONSTELLATION,
                 )
 
                 await asyncio.sleep(self.heartbeat_interval)

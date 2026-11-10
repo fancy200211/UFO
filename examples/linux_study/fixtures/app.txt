@@ -1,0 +1,7 @@
+2026-10-26 10:00:00 INFO service started
+2026-10-26 10:00:01 ERROR database connection timeout
+2026-10-26 10:00:02 INFO retry scheduled
+2026-10-26 10:00:03 WARN connection slow
+2026-10-26 10:00:04 ERROR database connection timeout
+2026-10-26 10:00:05 ERROR upstream unavailable
+2026-10-26 10:00:06 INFO service recovered

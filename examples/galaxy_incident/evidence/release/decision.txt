@@ -1,0 +1,6 @@
+r42 的 override 将 payment_timeout_ms 从 1800 降为 700。
+r43 修复提案建议改为 2000，但只有 PROPOSED，没有批准或生效回执。
+初始工单认为数据库故障，但未区分 prod/staging。
+证据归因规则：runtime_readback 与实际路由用于确认生效配置；提案文件和复制时间不能证明生效。
+本测试根因编码约定：CONFIRMED_TIMEOUT_OVERRIDE / DATABASE_OUTAGE / UNDETERMINED。
+CONFIRMED 表示此离线证据包内有相互支持的配置、时序、故障类型与指标；不代表已做真实线上因果实验。

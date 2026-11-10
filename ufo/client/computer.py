@@ -4,6 +4,7 @@ import copy
 import inspect
 import json
 import logging
+import os
 import time
 from typing import Any, Callable, Dict, List, Optional
 
@@ -162,14 +163,17 @@ class Computer:
 
         tool_key = tool_call.tool_key
         tool_info = self._tools_registry.get(tool_key, None)
-        namespace = tool_info.namespace if tool_info else None
-
-        self.logger.debug(
-            f"Running [{namespace}] tool: {tool_info.tool_name} with parameters: {tool_info.parameters}"
-        )
 
         if not tool_info:
             raise ValueError(f"Tool {tool_key} is not registered.")
+
+        namespace = tool_info.namespace
+        log_params = dict(tool_info.parameters or {})
+        if "api_key" in log_params:
+            log_params["api_key"] = "[REDACTED]"
+        self.logger.debug(
+            f"Running [{namespace}] tool: {tool_info.tool_name} with parameters: {log_params}"
+        )
 
         # Check if the tool is a meta tool for listing tools
         if tool_info.tool_name in self._meta_tools:
@@ -191,7 +195,9 @@ class Computer:
         server = tool_info.mcp_server.server
 
         tool_name = tool_info.tool_name
-        params = tool_info.parameters or {}
+        # Keep credentials out of the registered action and its trajectory logs.
+        params = copy.deepcopy(tool_info.parameters or {})
+        api_key = None
 
         # Run MCP tool call in a separate thread to avoid blocking the event loop
         # This prevents blocking operations (like time.sleep) in MCP tools from
@@ -217,6 +223,18 @@ class Computer:
                 loop.close()
 
         try:
+            api_key_env = self._get_api_key_env(tool_info.mcp_server)
+            if api_key_env is not None:
+                api_key = os.environ.get(api_key_env)
+                if not api_key:
+                    raise ValueError(
+                        f"MCP authentication is not configured: set {api_key_env} "
+                        "in the UFO device client environment and restart the client."
+                    )
+                # Local configuration is authoritative, including when the model
+                # supplies an incorrect or stale api_key argument.
+                params["api_key"] = api_key
+
             # Execute in thread pool with timeout protection
             loop = asyncio.get_event_loop()
             result = await asyncio.wait_for(
@@ -248,8 +266,13 @@ class Computer:
             )
         except Exception as e:
             # Other exceptions
-            error_msg = f"Tool {tool_name} execution failed: {str(e)}"
-            self.logger.error(error_msg, exc_info=True)
+            error_detail = str(e)
+            if api_key:
+                error_detail = error_detail.replace(api_key, "[REDACTED]")
+            error_msg = f"Tool {tool_name} execution failed: {error_detail}"
+            # A transport exception may include request arguments. Do not emit
+            # its unredacted traceback when credentials have been injected.
+            self.logger.error(error_msg, exc_info=not bool(api_key))
 
             error_content = [
                 TextContent(
@@ -297,6 +320,16 @@ class Computer:
         # Run all registration tasks concurrently
         await asyncio.gather(*tasks)
 
+    @staticmethod
+    def _get_api_key_env(mcp_server: BaseMCPServer) -> Optional[str]:
+        """Return the explicitly configured tool-argument credential source."""
+        name = mcp_server.config.get("api_key_env")
+        if name is not None and (not isinstance(name, str) or not name.strip()):
+            raise ValueError(
+                "MCP api_key_env must be a non-empty environment variable name."
+            )
+        return name
+
     async def register_one_mcp_server(
         self, namespace: str, tool_type: str, mcp_server: BaseMCPServer
     ) -> None:
@@ -312,12 +345,24 @@ class Computer:
             f"Registering tools from [{namespace}] server for ({tool_type})."
         )
 
+        api_key_env = self._get_api_key_env(mcp_server)
         async with Client(mcp_server.server) as client:
             tools = await client.list_tools()
 
             for tool in tools:
                 tool_key = self.make_tool_key(tool_type, tool.name)
                 if tool_key not in self._tools_registry:
+                    input_schema = copy.deepcopy(tool.inputSchema or {})
+                    if api_key_env is not None:
+                        # Only the model-facing copy changes. The MCP server
+                        # retains its required api_key and authentication check.
+                        input_schema.get("properties", {}).pop("api_key", None)
+                        if "required" in input_schema:
+                            input_schema["required"] = [
+                                name
+                                for name in input_schema["required"]
+                                if name != "api_key"
+                            ]
                     self._register_tool(
                         tool_key=tool_key,
                         tool_name=tool.name,
@@ -325,11 +370,7 @@ class Computer:
                         namespace=namespace,
                         tool_type=tool_type,
                         description=tool.description,
-                        input_schema=(
-                            tool.inputSchema
-                            if hasattr(tool, "inputSchema") and tool.inputSchema
-                            else {}
-                        ),
+                        input_schema=input_schema,
                         output_schema=(
                             tool.outputSchema
                             if hasattr(tool, "outputSchema") and tool.outputSchema

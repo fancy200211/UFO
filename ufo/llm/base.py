@@ -79,6 +79,7 @@ class BaseService(abc.ABC):
             "TIMEOUT": getattr(
                 system_config, "TIMEOUT", getattr(system_config, "timeout", 60)
             ),
+            "READ_TIMEOUT": getattr(system_config, "READ_TIMEOUT", None),
             "PRICES": getattr(
                 system_config, "PRICES", getattr(system_config, "prices", {})
             ),

@@ -144,6 +144,8 @@ LinuxAgent:
         host: "localhost"
         port: 8010
         path: "/mcp"
+        # Read in the UFO device client; never expose the value to the model.
+        api_key_env: "UFO_MCP_API_KEY"
         reset: false
 
 MobileAgent:

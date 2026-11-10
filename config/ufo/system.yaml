@@ -2,10 +2,12 @@
 
 # LLM Parameters
 MAX_TOKENS: 2000  # The max token limit for the response completion
-MAX_RETRY: 20  # The max retry limit for the response completion
+MAX_RETRY: 0  # Disable SDK retries; send each model request once
 TEMPERATURE: 0.0  # The temperature of the model: the lower the value, the more consistent
 TOP_P: 0.0  # The top_p of the model: the lower the value, the more conservative
-TIMEOUT: 60  # The call timeout(s), default is 1 mins
+TIMEOUT: 60  # Connection, write, and connection-pool timeout in seconds
+READ_TIMEOUT: 180  # Wait up to 180 seconds for response data
+USE_BACKUP_ENGINE: false  # Do not issue a backup model request after failure
 
 # Control Backend
 CONTROL_BACKEND: ["uia"]  # The backend for control action: uia, omniparser
@@ -21,7 +23,7 @@ RECTANGLE_TIME: 1
 ACTION_SEQUENCE: False  # Whether to output the action sequence (from legacy config)
 SHOW_VISUAL_OUTLINE_ON_SCREEN: False  # Skip rendering visual outline on screen if not necessary
 MAXIMIZE_WINDOW: False  # Whether to maximize the application window before the action
-JSON_PARSING_RETRY: 3  # The retry times for the json parsing
+JSON_PARSING_RETRY: 1  # Total attempts (not retry count): one attempt, no retry
 
 # Safety
 SAFE_GUARD: True  # Whether to use the safe guard to prevent sensitive operations (from legacy config)

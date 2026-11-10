@@ -16,6 +16,7 @@ from uuid import uuid4
 from aip.messages import (
     ClientMessage,
     ClientMessageType,
+    ClientType,
     ServerMessage,
     ServerMessageType,
     TaskStatus,
@@ -41,17 +42,20 @@ class HeartbeatProtocol(AIPProtocol):
         self._heartbeat_interval: float = 30.0  # Default: 30 seconds
 
     async def send_heartbeat(
-        self, client_id: str, metadata: Optional[dict] = None
+        self, client_id: str, metadata: Optional[dict] = None,
+        *, client_type: ClientType = ClientType.DEVICE
     ) -> None:
         """
         Send a single heartbeat message (client-side).
 
         :param client_id: Client ID
         :param metadata: Optional metadata dictionary
+        :param client_type: Role bound to this connection at registration
         """
         heartbeat_msg = ClientMessage(
             type=ClientMessageType.HEARTBEAT,
             client_id=client_id,
+            client_type=client_type,
             status=TaskStatus.OK,
             timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
             metadata=metadata,

@@ -1,0 +1,4 @@
+事件分片和发布记录使用带偏移的 ISO8601 时间。
++08:00 的 17:00:00 等于 UTC 09:00:00。
+运行时 effective.json 的 observed_at 和 infra/metrics.csv 使用 UTC。
+文件 mtime 只代表复制时间，不能代替事件发生时间或证明配置已生效。

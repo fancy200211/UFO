@@ -1,0 +1,1 @@
+{"observed_at":"2026-10-26T09:04:00Z","env":"prod","tenant":"alpha","release":"r42","payment_timeout_ms":700,"source":"override.conf","config_precedence":["default.conf","override.conf"],"pool":"primary","capture":"runtime_readback"}
