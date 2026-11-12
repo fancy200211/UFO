@@ -11,6 +11,32 @@ from ufo.client.mcp.http_servers import linux_mcp_server
 _is_command_allowed = linux_mcp_server._is_command_allowed
 
 
+@pytest.mark.parametrize("command", ["cp a b", "cp --parents sub/a dest", "mkdir -p nested/dir",
+    "chmod 644 a b", "mv a b", "zip -j result.zip a b"])
+def test_file_operations_are_allowed(command):
+    assert _is_command_allowed(command)
+
+
+@pytest.mark.asyncio
+async def test_real_file_operations(tmp_path):
+    from zipfile import ZipFile
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "note.txt").write_text("original")
+    executables = linux_mcp_server._resolve_allowed_executables()
+    for command in ["mkdir -p dest", "cp --parents source/note.txt dest", "chmod 644 dest/source/note.txt",
+                    "zip -j archive.zip source/note.txt", "mv source/note.txt moved.txt"]:
+        assert _is_command_allowed(command)
+        result = await linux_mcp_server._execute_allowed_command(command, timeout=10, cwd=str(tmp_path), executable_paths=executables)
+        assert result["success"], result
+    assert (tmp_path / "dest/source/note.txt").read_text() == "original"
+    assert (tmp_path / "dest/source/note.txt").stat().st_mode & 0o777 == 0o644
+    assert not (source / "note.txt").exists()
+    assert (tmp_path / "moved.txt").read_text() == "original"
+    with ZipFile(tmp_path / "archive.zip") as archive:
+        assert archive.read("note.txt") == b"original"
+
+
 @pytest.mark.parametrize(
     "command",
     [

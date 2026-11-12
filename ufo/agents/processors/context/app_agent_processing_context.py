@@ -132,4 +132,8 @@ class AppAgentProcessorContext(BasicProcessorContext):
             "function_call",
             "save_screenshot",
             "control_log",
+            # Latency instrumentation (phase timings were computed but filtered out)
+            "execution_times",
+            "total_time",
+            "latency",
         ]

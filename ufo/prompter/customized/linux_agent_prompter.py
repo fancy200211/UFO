@@ -78,7 +78,10 @@ class LinuxAgentPrompter(AppAgentPrompter):
         user_request: str,
         retrieved_docs: str = "",
         last_success_actions: List[Dict[str, Any]] = [],
-    ) -> List[Dict[str, str]]:
+        screenshot_url: str = None,
+        annotated_screenshot_url: str = None,
+        desktop_observation: Dict[str, Any] = None,
+    ) -> List[Dict[str, Any]]:
         """
         Construct the prompt for LLMs.
         :param image_list: The list of images.
@@ -94,6 +97,14 @@ class LinuxAgentPrompter(AppAgentPrompter):
         """
 
         user_content = []
+        for label, url in (("Current desktop", screenshot_url), ("Numbered controls", annotated_screenshot_url)):
+            if url:
+                user_content.extend([
+                    {"type": "text", "text": label},
+                    {"type": "image_url", "image_url": {"url": url}},
+                ])
+        if desktop_observation:
+            user_content.append({"type": "text", "text": "Current desktop observation:\n" + json.dumps(desktop_observation, ensure_ascii=False)})
 
         user_content.append(
             {

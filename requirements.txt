@@ -23,7 +23,8 @@ langchain_huggingface==0.3.1
 pandas==1.4.3
 rich==14.1.0
 html2text==2024.2.26
-pyautogui==0.9.54; sys_platform == 'win32'
+pyautogui==0.9.54; sys_platform == 'win32' or sys_platform == 'linux'
+pyperclip>=1.9,<2; sys_platform == 'linux'
 uiautomation==2.0.18; sys_platform == 'win32'
 ##For removing stopwords
 #nltk==3.8.1

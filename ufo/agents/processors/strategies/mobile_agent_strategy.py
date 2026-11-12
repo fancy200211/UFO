@@ -10,6 +10,7 @@ This module contains data collection strategies for Mobile Agent including:
 - Current screen controls information collection
 """
 
+import time
 import traceback
 from typing import TYPE_CHECKING, List, Dict, Any
 
@@ -36,6 +37,7 @@ from ufo.agents.processors.schemas.actions import (
 )
 from ufo.llm.response_schema import AppAgentResponse
 from ufo.agents.processors.schemas.target import TargetInfo, TargetKind
+from ufo.utils.latency import record_stage
 
 # Load configuration
 ufo_config = get_ufo_config()
@@ -110,6 +112,7 @@ class MobileScreenshotCaptureStrategy(BaseProcessingStrategy):
             # For now, we'll use the clean screenshot
 
             screenshot_time = time.time() - start_time
+            record_stage("data.screenshot", screenshot_time)
 
             return ProcessingResult(
                 success=True,
@@ -249,6 +252,7 @@ class MobileAppsCollectionStrategy(BaseProcessingStrategy):
                     installed_apps = []
 
             apps_time = time.time() - start_time
+            record_stage("data.apps", apps_time, count=len(installed_apps))
 
             self.logger.info(f"Collected {len(installed_apps)} installed apps")
 
@@ -384,6 +388,7 @@ class MobileControlsCollectionStrategy(BaseProcessingStrategy):
                     current_controls = []
 
             controls_time = time.time() - start_time
+            record_stage("data.controls", controls_time, count=len(current_controls))
 
             self.logger.info(f"Collected {len(current_controls)} screen controls")
 
@@ -391,6 +396,7 @@ class MobileControlsCollectionStrategy(BaseProcessingStrategy):
             annotated_screenshot_url = None
             annotated_screenshot_path = None
             annotation_dict = {}
+            annotation_started = time.time()
 
             if len(current_controls) > 0:
                 clean_screenshot_path = context.get_local("clean_screenshot_path")
@@ -428,6 +434,12 @@ class MobileControlsCollectionStrategy(BaseProcessingStrategy):
                         )
                     else:
                         self.logger.warning("Failed to create annotated screenshot")
+
+            record_stage(
+                "data.annotate",
+                time.time() - annotation_started,
+                annotated=bool(annotated_screenshot_url),
+            )
 
             return ProcessingResult(
                 success=True,
@@ -668,6 +680,7 @@ class MobileLLMInteractionStrategy(AppLLMInteractionStrategy):
             if not agent.blackboard.is_empty():
                 blackboard_prompt = agent.blackboard.blackboard_to_prompt()
 
+            prompt_started = time.perf_counter()
             prompt_message = agent.message_constructor(
                 dynamic_examples=[],
                 dynamic_knowledge="",
@@ -680,6 +693,12 @@ class MobileLLMInteractionStrategy(AppLLMInteractionStrategy):
                 blackboard_prompt=blackboard_prompt,
                 last_success_actions=self._get_last_success_actions(agent=agent),
             )
+            record_stage(
+                "llm.prompt",
+                time.perf_counter() - prompt_started,
+                controls=len(current_controls),
+                apps=len(installed_apps),
+            )
 
             # Get LLM response
             self.logger.info("Getting LLM response for Mobile Agent")
@@ -689,7 +708,10 @@ class MobileLLMInteractionStrategy(AppLLMInteractionStrategy):
 
             # Parse and validate response
             self.logger.info("Parsing Mobile Agent response")
+            parse_started = time.perf_counter()
             parsed_response = self._parse_app_response(agent, response_text)
+            record_stage("llm.parse", time.perf_counter() - parse_started)
+            self._record_llm_profile(prompt_message, response_text)
 
             # Extract structured data
             structured_data = parsed_response.model_dump()

@@ -18,7 +18,7 @@ THIRD_PARTY_AGENT_CONFIG:
     AGENT_NAME: "LinuxAgent"
     APPAGENT_PROMPT: "ufo/prompts/third_party/linux_agent.yaml"
     APPAGENT_EXAMPLE_PROMPT: "ufo/prompts/third_party/linux_agent_example.yaml"
-    INTRODUCTION: "For Linux Use Only."
+    INTRODUCTION: "For Linux desktop and command-line tasks. Observes screenshots and AT-SPI controls, operates applications with mouse and keyboard, switches windows, and manages files through available commands."
 
   MobileAgent:
     AGENT_NAME: "MobileAgent"

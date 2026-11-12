@@ -105,6 +105,7 @@ class BasicProcessorContext(ProcessorContextProtocol):
     # Performance and error tracking
     execution_times: Dict[str, float] = field(default_factory=dict)
     total_time: float = 0.0
+    latency: Dict[str, Any] = field(default_factory=dict)
     error_count: int = 0
     last_error: Optional[str] = None
     llm_cost: float = 0.0

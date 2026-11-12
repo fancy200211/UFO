@@ -89,5 +89,6 @@ class HostAgentProcessorContext(BasicProcessorContext):
             "last_error",  # error (mapped to last_error)
             "execution_times",  # time_cost (mapped to execution_times)
             "total_time",
+            "latency",  # Structured per-stage latency breakdown
             "control_log",  # ControlLog
         ]

@@ -53,6 +53,7 @@ from ufo.llm import AgentType
 from ufo.llm.grounding_model.omniparser_service import OmniParser
 from ufo.module.context import ContextNames
 from ufo.module.dispatcher import BasicCommandDispatcher
+from ufo.utils.latency import add_action, record_stage, set_llm_meta
 
 # Load configuration
 ufo_config = get_ufo_config()
@@ -887,11 +888,17 @@ class AppLLMInteractionStrategy(BaseProcessingStrategy):
 
             concat_screenshot_path = log_path + f"action_step{session_step}_concat.png"
 
+            images_started = time.perf_counter()
             image_string_list = self._collect_image_strings(
                 last_control_screenshot_path,
                 clean_screenshot_path,
                 annotated_screenshot_path,
                 concat_screenshot_path,
+            )
+            record_stage(
+                "llm.images",
+                time.perf_counter() - images_started,
+                images=len(image_string_list),
             )
 
             self.logger.info(
@@ -905,6 +912,7 @@ class AppLLMInteractionStrategy(BaseProcessingStrategy):
 
             # Step 3: Build comprehensive prompt
             self.logger.info("Building App Agent prompt with control information")
+            prompt_started = time.perf_counter()
             prompt_message = await self._build_app_prompt(
                 agent=agent,
                 control_info=control_info,
@@ -919,6 +927,11 @@ class AppLLMInteractionStrategy(BaseProcessingStrategy):
                 session_step=session_step,
                 request_logger=request_logger,
             )
+            record_stage(
+                "llm.prompt",
+                time.perf_counter() - prompt_started,
+                controls=len(control_info),
+            )
 
             # Step 4: Get LLM response
             self.logger.info("Getting LLM response for App Agent")
@@ -928,7 +941,10 @@ class AppLLMInteractionStrategy(BaseProcessingStrategy):
 
             # Step 5: Parse and validate response
             self.logger.info("Parsing App Agent response")
+            parse_started = time.perf_counter()
             parsed_response = self._parse_app_response(agent, response_text)
+            record_stage("llm.parse", time.perf_counter() - parse_started)
+            self._record_llm_profile(prompt_message, response_text)
 
             # Step 5: Extract structured data
             structured_data = parsed_response.model_dump()
@@ -1217,6 +1233,67 @@ class AppLLMInteractionStrategy(BaseProcessingStrategy):
 
         except Exception as e:
             self.logger.warning(f"Failed to log request data: {str(e)}")
+
+    def _record_llm_profile(
+        self, prompt_message: Any, response_text: Optional[str]
+    ) -> None:
+        """
+        Record the prompt/response profile of this step.
+
+        The profile (prompt size, image count, image bytes) is what makes a
+        latency outlier explainable without a real TTFT measurement: a huge
+        image payload points at the request, a huge completion at the model.
+
+        :param prompt_message: Prompt payload sent to the LLM.
+        :param response_text: Raw response text.
+        """
+        try:
+            chars, images, image_bytes = self._profile_prompt(prompt_message)
+            set_llm_meta(
+                prompt_chars=chars,
+                images=images,
+                image_bytes=image_bytes,
+                completion_chars=len(response_text or ""),
+            )
+        except Exception as error:  # pragma: no cover - telemetry only
+            self.logger.debug(f"Failed to record LLM profile: {error}")
+
+    @classmethod
+    def _profile_prompt(cls, payload: Any) -> tuple[int, int, int]:
+        """
+        Walk a prompt payload and measure text characters and image payloads.
+
+        :param payload: Nested list/dict prompt structure or a plain string.
+        :return: Tuple of (text characters, image count, image bytes).
+        """
+        chars = 0
+        images = 0
+        image_bytes = 0
+
+        def walk(node: Any) -> None:
+            nonlocal chars, images, image_bytes
+            if isinstance(node, str):
+                chars += len(node)
+                return
+            if isinstance(node, dict):
+                image_url = node.get("image_url")
+                if isinstance(image_url, dict):
+                    url = image_url.get("url") or ""
+                else:
+                    url = image_url or ""
+                if isinstance(url, str) and url.startswith("data:") and "," in url:
+                    images += 1
+                    image_bytes += int(len(url.split(",", 1)[1]) * 3 / 4)
+                    return
+                for value in node.values():
+                    walk(value)
+                return
+            if isinstance(node, (list, tuple)):
+                for item in node:
+                    walk(item)
+
+        walk(payload)
+        return chars, images, image_bytes
 
     async def _get_llm_response(
         self, agent: "AppAgent", prompt_message: List[Dict[str, Any]]
@@ -1511,7 +1588,24 @@ class AppActionExecutionStrategy(BaseProcessingStrategy):
                 raise ValueError("Command dispatcher not available")
 
             # Execute the command
+            dispatch_started = time.perf_counter()
             execution_result = await command_dispatcher.execute_commands(commands)
+            dispatch_elapsed = time.perf_counter() - dispatch_started
+
+            record_stage(
+                "action.execute", dispatch_elapsed, count=len(commands)
+            )
+            try:
+                success = bool(execution_result) and all(
+                    getattr(result, "status", None) == ResultStatus.SUCCESS
+                    for result in execution_result
+                )
+            except Exception:
+                success = None
+            if len(actions) == 1:
+                add_action(actions[0].function or "unknown", dispatch_elapsed, success)
+            else:
+                add_action(f"batch({len(actions)})", dispatch_elapsed, success)
 
             return execution_result
 

@@ -16,6 +16,7 @@ from ufo.agents.processors.core.strategy_dependency import (
 )
 from ufo.agents.processors.strategies.processing_strategy import ProcessingStrategy
 from ufo.module.context import Context, ContextNames
+from ufo.utils.latency import LatencyTracker, activate_tracker, reset_tracker
 
 if TYPE_CHECKING:
     from ufo.agents.agent.basic import BasicAgent
@@ -340,6 +341,12 @@ class ProcessorTemplate(ABC):
         """
         start_time = time.time()
 
+        tracker = LatencyTracker(
+            role=self._latency_role(), agent=getattr(self.agent, "name", "")
+        )
+        phase_times: Dict[str, float] = {}
+        latency_token = activate_tracker(tracker)
+
         try:
             # Execute pre-processing middleware
             for middleware in self.middleware_chain:
@@ -369,6 +376,7 @@ class ProcessorTemplate(ABC):
                     result = await strategy.execute(self.agent, self.processing_context)
                     result.execution_time = time.time() - phase_start
                     result.phase = phase
+                    phase_times[phase.value] = result.execution_time
 
                     # Validate provides consistency after execution
                     self._validate_strategy_provides_runtime(strategy, result)
@@ -404,6 +412,8 @@ class ProcessorTemplate(ABC):
                 self.processing_context.get_phase_results_summary()
             )
 
+            self._record_latency(tracker, phase_times, combined_result.execution_time)
+
             # Decide what data needs to be promoted to global context
             self._finalize_processing_context(self.processing_context)
 
@@ -434,9 +444,59 @@ class ProcessorTemplate(ABC):
                     f"Processing failed at phase: {e.phase}, context: {e.context_data}"
                 )
 
+            self._record_latency(
+                tracker, phase_times, error_result.execution_time, status="ERROR"
+            )
+
             # Execute error handling middleware
             for middleware in self.middleware_chain:
                 self.logger.info(f"Executing middleware on_error: {middleware.name}")
                 await middleware.on_error(self, e)
 
             return error_result
+        finally:
+            reset_tracker(latency_token, tracker)
+
+    # ------------------------------------------------------------------ #
+    # Latency instrumentation
+    # ------------------------------------------------------------------ #
+    def _latency_role(self) -> str:
+        """
+        Return the latency role of this processor.
+
+        :return: ``"constellation"`` for Galaxy processors, ``"app"`` otherwise.
+        """
+        name = self.__class__.__name__.lower()
+        return "constellation" if "constellation" in name else "app"
+
+    def _record_latency(
+        self,
+        tracker: LatencyTracker,
+        phase_times: Dict[str, float],
+        total_s: float,
+        status: Optional[str] = None,
+    ) -> None:
+        """
+        Store the collected timings in the processing context.
+
+        The record is written to ``response.log`` by the logging middleware and
+        to ``latency.json`` by the latency store.  Never raises.
+
+        :param tracker: Tracker of the current step.
+        :param phase_times: Inclusive duration per phase.
+        :param total_s: Step wall-clock in seconds.
+        :param status: Optional step status, defaults to the context status.
+        """
+        try:
+            local_context = self.processing_context.local_context
+            step_status = status or getattr(local_context, "status", None)
+            local_context.latency = tracker.as_dict(
+                phases=phase_times,
+                total_s=total_s,
+                session_step=getattr(local_context, "session_step", 0),
+                round_step=getattr(local_context, "round_step", 0),
+                round_num=getattr(local_context, "round_num", 0),
+                status=step_status,
+            )
+        except Exception as error:  # pragma: no cover - defensive
+            self.logger.debug(f"Failed to record latency: {error}")

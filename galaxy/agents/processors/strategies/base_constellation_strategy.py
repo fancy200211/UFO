@@ -37,6 +37,7 @@ from ufo.agents.processors.schemas.actions import (
     ListActionCommandInfo,
 )
 from ufo.agents.processors.strategies.processing_strategy import BaseProcessingStrategy
+from ufo.utils.latency import record_stage
 from aip.messages import Command, Result
 from ufo.llm import AgentType
 from ufo.module.context import Context
@@ -101,6 +102,7 @@ class ConstellationLLMInteractionStrategy(BaseProcessingStrategy):
 
             # Step 1: Build comprehensive prompt message
             self.logger.info("Building prompt message with context")
+            prompt_started = time.perf_counter()
             prompt_message = await self._build_comprehensive_prompt(
                 agent,
                 device_info,
@@ -109,6 +111,11 @@ class ConstellationLLMInteractionStrategy(BaseProcessingStrategy):
                 session_step,
                 weaving_mode,
                 request_logger,
+            )
+            record_stage(
+                "llm.prompt",
+                time.perf_counter() - prompt_started,
+                weaving_mode=str(weaving_mode),
             )
 
             # Step 2: Get LLM response with retry logic
@@ -119,7 +126,9 @@ class ConstellationLLMInteractionStrategy(BaseProcessingStrategy):
 
             # Step 3: Parse and validate response
             self.logger.info("Parsing LLM response")
+            parse_started = time.perf_counter()
             parsed_response = self._parse_and_validate_response(agent, response_text)
+            record_stage("llm.parse", time.perf_counter() - parse_started)
 
             self.logger.info(f"Constellation LLM interaction completed successfully")
 

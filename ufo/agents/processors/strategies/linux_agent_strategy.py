@@ -1,3 +1,5 @@
+import json
+from pathlib import Path
 import traceback
 from typing import List, TYPE_CHECKING
 
@@ -17,11 +19,53 @@ from ufo.agents.processors.strategies.app_agent_processing_strategy import (
     AppActionExecutionStrategy,
     AppLLMInteractionStrategy,
 )
-from aip.messages import Result
+from aip.messages import Command, Result, ResultStatus
+from ufo import utils
+from ufo.agents.processors.strategies.processing_strategy import BaseProcessingStrategy
 from ufo.llm.response_schema import AppAgentResponse
+from ufo.module.context import ContextNames
 
 if TYPE_CHECKING:
     from ufo.agents.agent.customized_agent import LinuxAgent
+
+
+@depends_on("log_path", "session_step")
+@provides("clean_screenshot_path", "annotated_screenshot_path", "clean_screenshot_url", "annotated_screenshot_url", "desktop_observation")
+class LinuxDesktopCollectionStrategy(BaseProcessingStrategy):
+    """Collect and persist one observation before each Linux model call."""
+
+    async def execute(self, agent, context):
+        try:
+            results = await context.global_context.command_dispatcher.execute_commands([
+                Command(tool_name="get_desktop_observation", parameters={}, tool_type="data_collection")
+            ])
+            if not results or results[0].status != ResultStatus.SUCCESS:
+                raise RuntimeError(results[0].error if results else "No desktop observation returned")
+            observation = results[0].result
+            if not isinstance(observation, dict) or not observation.get("screenshot_url"):
+                raise ValueError("Desktop observation has no screenshot")
+            directory = Path(context.get("log_path"))
+            directory.mkdir(parents=True, exist_ok=True)
+            prefix = directory / f"action_step{context.get('session_step', 0)}"
+            clean_path, annotated_path = str(prefix) + ".png", str(prefix) + "_annotated.png"
+            utils.save_image_string(observation["screenshot_url"], clean_path)
+            utils.save_image_string(observation["annotated_screenshot_url"], annotated_path)
+            metadata = {k: v for k, v in observation.items() if not k.endswith("screenshot_url")}
+            Path(str(prefix) + "_ui.json").write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
+            return ProcessingResult(success=True, phase=ProcessingPhase.DATA_COLLECTION, data={
+                "clean_screenshot_path": clean_path, "annotated_screenshot_path": annotated_path,
+                "clean_screenshot_url": observation["screenshot_url"],
+                "annotated_screenshot_url": observation["annotated_screenshot_url"],
+                "desktop_observation": metadata,
+            })
+        except Exception as exc:
+            # CLI remains usable if observation fails; never reuse an old screenshot.
+            self.logger.warning("Linux desktop observation failed: %s", exc)
+            return ProcessingResult(success=True, phase=ProcessingPhase.DATA_COLLECTION, data={
+                "clean_screenshot_path": "", "annotated_screenshot_path": "",
+                "clean_screenshot_url": None, "annotated_screenshot_url": None,
+                "desktop_observation": {"ui_tree": [], "controls": [], "warnings": [str(exc)]},
+            })
 
 
 @depends_on("request")
@@ -79,6 +123,9 @@ class LinuxLLMInteractionStrategy(AppLLMInteractionStrategy):
                 request=request,
                 blackboard_prompt=blackboard_prompt,
                 last_success_actions=self._get_last_success_actions(agent=agent),
+                screenshot_url=context.get_local("clean_screenshot_url"),
+                annotated_screenshot_url=context.get_local("annotated_screenshot_url"),
+                desktop_observation=context.get_local("desktop_observation", {}),
             )
 
             # Get LLM response
@@ -172,6 +219,8 @@ class LinuxActionExecutionStrategy(AppActionExecutionStrategy):
                 if isinstance(parsed_response.action, ActionCommandInfo)
                 else action_info.status
             )
+            if status != "FAIL" and any(a.result.status != ResultStatus.SUCCESS for a in actions):
+                status = "CONTINUE"
 
             return ProcessingResult(
                 success=True,
@@ -202,36 +251,36 @@ class LinuxActionExecutionStrategy(AppActionExecutionStrategy):
         :param execution_result: Execution results
         :return: ActionCommandInfo object
         """
-        try:
-            # Get control information if action involved a control
-            if not actions:
-                actions = []
-            if not execution_results:
-                execution_results = []
-
-            if isinstance(actions, ActionCommandInfo):
-                actions = [actions]
-
-            assert len(execution_results) == len(
-                actions
-            ), "Mismatch in actions and execution results length"
-
-            for i, action in enumerate(actions):
-                action.result = execution_results[i]
-
-                if not action.function:
-                    action.function = "no_action"
-
-            return actions
-
-        except Exception as e:
-            self.logger.warning(f"Failed to create action info: {str(e)}")
+        actions = [actions] if isinstance(actions, ActionCommandInfo) else (actions or [])
+        results = iter(execution_results or [])
+        for action in actions:
+            if not action.function:
+                action.result = Result(status=ResultStatus.SUCCESS, result="No action taken.")
+                continue
+            result = next(results, None)
+            if result is None:
+                result = Result(status=ResultStatus.FAILURE, error="Missing execution result")
+            payload = result.result
+            if isinstance(payload, dict) and (payload.get("success") is False or payload.get("exit_code", 0) not in (0, None)):
+                result.status = ResultStatus.FAILURE
+                result.error = str(payload.get("error") or payload.get("stderr") or f"Command exited with {payload.get('exit_code')}")
+            action.result = result
+        return actions
 
 
 class LinuxLoggingMiddleware(AppAgentLoggingMiddleware):
     """
     Specialized logging middleware for Linux Agent with enhanced contextual information.
     """
+
+    async def on_error(self, processor, error):
+        await super().on_error(processor, error)
+        # The shared logger does not set a status. An empty Linux status maps to
+        # a terminal None state, which otherwise looks like successful completion.
+        context = processor.processing_context
+        context.set_local("status", "FAIL")
+        context.set_local("result", str(error))
+        context.global_context.set(ContextNames.ROUND_RESULT, str(error))
 
     def starting_message(self, context: ProcessingContext) -> str:
         """

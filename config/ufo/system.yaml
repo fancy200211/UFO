@@ -69,6 +69,11 @@ SCREENSHOT_TO_MEMORY: True  # Whether to allow the screenshot to memory
 # Image Performance
 DEFAULT_PNG_COMPRESS_LEVEL: 1  # The compress level for PNG image, 0-9
 
+# Latency Tracking
+LATENCY_TRACKING: True  # Record per-step stage timings into latency.json / latency.md
+LATENCY_SLOW_STEP_S: 60  # A step slower than this is flagged as a slow outlier
+LATENCY_TOP_N: 5  # Number of slowest steps kept in the rollup
+
 # Save Options
 SAVE_UI_TREE: False  # Whether to save the UI tree at each step
 SAVE_FULL_SCREEN: False  # Whether to save the full screen at each step

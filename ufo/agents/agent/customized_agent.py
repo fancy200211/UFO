@@ -85,7 +85,7 @@ class LinuxAgent(CustomizedAgent):
         Get the prompt for the agent.
         :param main_prompt: The main prompt file path.
         :param example_prompt: The example prompt file path.
-        :param is_visual: Whether the agent is visual or not. (Not enabled for LinuxAgent)
+        :param is_visual: Visual observations are supplied by the Linux collection strategy.
         :return: The prompter instance.
         """
         return LinuxAgentPrompter(main_prompt, example_prompt)
@@ -105,6 +105,9 @@ class LinuxAgent(CustomizedAgent):
         request: str,
         blackboard_prompt: List[Dict[str, str]],
         last_success_actions: List[Dict[str, Any]],
+        screenshot_url: str = None,
+        annotated_screenshot_url: str = None,
+        desktop_observation: Dict[str, Any] = None,
     ) -> List[Dict[str, Union[str, List[Dict[str, str]]]]]:
         """
         Construct the prompt message for the AppAgent.
@@ -125,6 +128,9 @@ class LinuxAgent(CustomizedAgent):
             user_request=request,
             retrieved_docs=dynamic_knowledge,
             last_success_actions=last_success_actions,
+            screenshot_url=screenshot_url,
+            annotated_screenshot_url=annotated_screenshot_url,
+            desktop_observation=desktop_observation,
         )
 
         if blackboard_prompt:

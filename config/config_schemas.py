@@ -338,6 +338,11 @@ class SystemConfig:
     # ========== Image Performance ==========
     default_png_compress_level: int = 1
 
+    # ========== Latency Tracking ==========
+    latency_tracking: bool = True
+    latency_slow_step_s: float = 60.0
+    latency_top_n: int = 5
+
     # ========== Save Options ==========
     save_ui_tree: bool = False
     save_full_screen: bool = False
@@ -517,6 +522,10 @@ class SystemConfig:
             "SCREENSHOT_TO_MEMORY": "screenshot_to_memory",
             # Image Performance
             "DEFAULT_PNG_COMPRESS_LEVEL": "default_png_compress_level",
+            # Latency Tracking
+            "LATENCY_TRACKING": "latency_tracking",
+            "LATENCY_SLOW_STEP_S": "latency_slow_step_s",
+            "LATENCY_TOP_N": "latency_top_n",
             # Save Options
             "SAVE_UI_TREE": "save_ui_tree",
             "SAVE_FULL_SCREEN": "save_full_screen",

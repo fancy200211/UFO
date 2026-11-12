@@ -352,6 +352,10 @@ class GalaxySession(BaseSession):
             self._session_results["final_results"] = final_results
             self._session_results["metrics"] = self._metrics_observer.get_metrics()
 
+            self._write_latency_summary(
+                self._session_results.get("total_execution_time", 0.0)
+            )
+
             if galaxy_config.constellation.LOG_TO_MARKDOWN:
 
                 file_path = self.log_path
@@ -382,6 +386,54 @@ class GalaxySession(BaseSession):
             traceback.print_exc()
         # Note: Observer cleanup is now handled externally when creating a new session
         # to ensure observers remain active throughout the async constellation execution
+
+    def _write_latency_summary(self, total_time: float) -> None:
+        """
+        Write the session level latency rollup.
+
+        The rollup reports how much wall-clock time went into Constellation
+        rounds versus task execution versus orchestration overhead, and a
+        condensed copy is attached to ``metrics.latency`` so it reaches the
+        evaluation artifacts.
+
+        :param total_time: Wall-clock duration of the whole session.
+        """
+        try:
+            from ufo.utils.latency import write_session_latency
+
+            tasks = []
+            if self._current_constellation:
+                for task_id, task in (self._current_constellation.tasks or {}).items():
+                    tasks.append(
+                        {
+                            "task_id": task_id,
+                            "name": getattr(task, "name", None),
+                            "duration_s": getattr(task, "execution_duration", 0.0)
+                            or 0.0,
+                        }
+                    )
+
+            summary = write_session_latency(self.log_path, total_time, tasks)
+            if not summary:
+                return
+
+            metrics = self._session_results.get("metrics")
+            if isinstance(metrics, dict):
+                metrics["latency"] = {
+                    "available": True,
+                    "log_dir": summary.get("log_dir"),
+                    "session_total_s": summary.get("session_total_s"),
+                    "tasks_total_s": summary.get("tasks_total_s"),
+                    "constellation_total_s": (
+                        summary.get("constellation") or {}
+                    ).get("total_s"),
+                    "constellation_rounds": (
+                        summary.get("constellation") or {}
+                    ).get("step_count"),
+                    "untracked_s": summary.get("untracked_s"),
+                }
+        except Exception as error:  # pragma: no cover - telemetry only
+            self.logger.debug(f"Failed to write session latency summary: {error}")
 
     def is_error(self) -> bool:
         """

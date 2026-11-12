@@ -9,6 +9,7 @@ from typing import Tuple
 from .base import BaseService
 from .config_helper import get_agent_config
 from config.config_loader import get_ufo_config
+from ufo.utils.latency import current_tracker, incr_llm, set_llm_meta
 
 logger = logging.getLogger(__name__)
 
@@ -92,10 +93,15 @@ def get_completions(
 
     try:
         api_type_lower = api_type.lower()
+        tracker = current_tracker()
+        set_llm_meta(model=api_model, api_type=api_type_lower, agent=str(agent_type))
+        incr_llm("calls")
+
         started = time.perf_counter()
         logger.warning("[LATENCY] service_init_start agent=%s model=%s", agent_type, api_model)
         try:
-            service = BaseService.get_service(api_type_lower, agent_type, api_model.lower())
+            with tracker.stage("llm.service_init"):
+                service = BaseService.get_service(api_type_lower, agent_type, api_model.lower())
         finally:
             logger.warning(
                 "[LATENCY] service_init_end agent=%s model=%s elapsed_s=%.3f",
@@ -105,7 +111,8 @@ def get_completions(
             started = time.perf_counter()
             logger.warning("[LATENCY] completion_start agent=%s model=%s", agent_type, api_model)
             try:
-                response, cost = service.chat_completion(messages, n)
+                with tracker.stage("llm.completion"):
+                    response, cost = service.chat_completion(messages, n)
             finally:
                 logger.warning(
                     "[LATENCY] completion_end agent=%s model=%s elapsed_s=%.3f",

@@ -68,6 +68,7 @@ class ConstellationProcessorContext(BasicProcessorContext):
             "results",  # Results
             "execution_times",  # time_cost (mapped to execution_times)
             "total_time",
+            "latency",  # Structured per-stage latency breakdown
             "device_info",
             "constellation_before",
             "constellation_after",

@@ -119,6 +119,15 @@ class EnhancedLoggingMiddleware(ProcessorMiddleware):
 
         local_context.execution_times = phrase_time_cost
 
+        # Persist the structured latency record next to the trace files.
+        self._persist_latency(processor, local_context)
+
+        if local_logger is None:
+            # Some deployments (e.g. headless Galaxy workers) do not attach a
+            # file writer; the trace line is simply skipped in that case.
+            self.logger.debug("No local logger configured; response trace not written.")
+            return
+
         safe_obj = to_jsonable_python(local_context.to_dict(selective=True))
 
         local_context_string = json.dumps(safe_obj, ensure_ascii=False)
@@ -126,6 +135,35 @@ class EnhancedLoggingMiddleware(ProcessorMiddleware):
         local_logger.write(local_context_string)
 
         self.logger.info("Log saved successfully.")
+
+    def _persist_latency(self, processor: "ProcessorTemplate", local_context) -> None:
+        """
+        Append the step latency record to ``latency.steps.jsonl`` and refresh
+        the ``latency.json`` / ``latency.md`` rollup.
+
+        Telemetry failures are swallowed on purpose.
+
+        :param processor: The processor that just finished a step.
+        :param local_context: Local context holding the ``latency`` record.
+        """
+        try:
+            record = getattr(local_context, "latency", None)
+            if not record:
+                return
+
+            log_path = processor.processing_context.get_local("log_path")
+            if not log_path:
+                log_path = processor.processing_context.global_context.get(
+                    ContextNames.LOG_PATH
+                )
+            if not log_path:
+                return
+
+            from ufo.utils.latency import LatencyStore
+
+            LatencyStore(str(log_path)).append_step(record)
+        except Exception as error:  # pragma: no cover - telemetry must not break a step
+            self.logger.debug(f"Failed to persist latency record: {error}")
 
     async def on_error(self, processor: "ProcessorTemplate", error: Exception) -> None:
         """Enhanced error logging with context information."""

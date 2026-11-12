@@ -25,8 +25,47 @@ from ufo.llm.response_schema import (
     HostAgentResponse,
 )
 from ufo.llm import AgentType
+from ufo.utils.latency import add_llm_http, incr_llm
 
 logger = logging.getLogger(__name__)
+
+
+def _record_http_attempt(
+    request: httpx.Request,
+    attempt_id: str,
+    elapsed_s: float,
+    status: Optional[int],
+    headers_s: Optional[float],
+    failed_phase: Optional[str],
+) -> None:
+    """
+    Mirror one SDK HTTP attempt into the active step's latency tracker.
+
+    :param request: The outgoing request (used for the retry counter header).
+    :param attempt_id: Short attempt identifier.
+    :param elapsed_s: Total attempt duration in seconds.
+    :param status: HTTP status code, ``None`` for transport failures.
+    :param headers_s: Time until response headers arrived, if known.
+    :param failed_phase: httpx trace phase that failed, if any.
+    """
+    try:
+        raw_retry = request.headers.get("x-stainless-retry-count", "0")
+        try:
+            retry_index = int(raw_retry)
+        except (TypeError, ValueError):
+            retry_index = 0
+        if retry_index > 0:
+            incr_llm("retries")
+        add_llm_http(
+            id=attempt_id,
+            retry_index=retry_index,
+            elapsed_s=round(elapsed_s, 3),
+            headers_s=round(headers_s, 3) if headers_s is not None else None,
+            status=status,
+            failed_phase=failed_phase,
+        )
+    except Exception:  # pragma: no cover - telemetry must never break a request
+        logger.debug("Failed to record HTTP latency attempt", exc_info=True)
 
 
 class _LatencyHttpxClient(DefaultHttpxClient):
@@ -59,21 +98,29 @@ class _LatencyHttpxClient(DefaultHttpxClient):
         try:
             response = super().send(request, **kwargs)
         except Exception as exc:
+            elapsed = time.perf_counter() - started
             logger.warning(
                 "[LATENCY_HTTP] error id=%s elapsed_s=%.3f error=%s "
                 "cause=%s phase=%s headers_s=%s",
-                attempt_id, time.perf_counter() - started, type(exc).__name__,
+                attempt_id, elapsed, type(exc).__name__,
                 type(exc.__cause__).__name__ if exc.__cause__ else None,
                 failed_phase, headers_s,
             )
+            _record_http_attempt(
+                request, attempt_id, elapsed, None, headers_s, failed_phase
+            )
             raise
         else:
+            elapsed = time.perf_counter() - started
             logger.warning(
                 "[LATENCY_HTTP] end id=%s elapsed_s=%.3f status=%s "
                 "headers_s=%s request_id=%r retry_after=%r",
-                attempt_id, time.perf_counter() - started, response.status_code,
+                attempt_id, elapsed, response.status_code,
                 headers_s, response.headers.get("x-request-id"),
                 response.headers.get("retry-after"),
+            )
+            _record_http_attempt(
+                request, attempt_id, elapsed, response.status_code, headers_s, None
             )
             return response
         finally:

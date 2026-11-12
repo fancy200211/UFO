@@ -101,6 +101,18 @@ class LinuxSession(LinuxBaseSession):
                 self._finish = True
             return request
 
+    def is_error(self) -> bool:
+        """A stopped Linux session is successful only after an actual FINISH."""
+        state = self.current_round.state.name() if self.current_round is not None else None
+        if state in {"FAIL", "ERROR"}:
+            return True
+        if self.step >= ufo_config.system.max_step and state != "FINISH":
+            return True
+        # max_round counts rounds when added, so check its state only after it ends.
+        if self._finish and state != "FINISH":
+            return True
+        return False
+
     def request_to_evaluate(self) -> str:
         """
         Get the request to evaluate.

@@ -130,6 +130,8 @@ ALLOWED_SHELL_COMMANDS: FrozenSet[str] = frozenset(
         # File listing / navigation
         "ls",
         "pwd",
+        # File operations used by Linux desktop/file tasks
+        "cp", "mkdir", "chmod", "mv", "zip",
         # File reading (read-only)
         "cat",
         "head",
@@ -391,7 +393,48 @@ def _check_uniq_args(args: List[str]) -> bool:
     return True
 
 
+def _file_operands(args: List[str], options: FrozenSet[str]) -> Optional[List[str]]:
+    """Parse the small set of file-operation options we expose; keep paths literal."""
+    operands, parse_options = [], True
+    for arg in args:
+        if parse_options and arg == "--":
+            parse_options = False
+        elif parse_options and arg.startswith("-"):
+            if arg not in options:
+                return None
+        else:
+            operands.append(arg)
+    return operands
+
+
+def _check_cp_args(args: List[str]) -> bool:
+    return len(_file_operands(args, frozenset({"--parents", "-p", "-n"})) or []) >= 2
+
+
+def _check_mkdir_args(args: List[str]) -> bool:
+    return bool(_file_operands(args, frozenset({"-p", "--parents"})))
+
+
+def _check_chmod_args(args: List[str]) -> bool:
+    operands = _file_operands(args, frozenset())
+    return bool(operands and len(operands) >= 2 and re.fullmatch(r"[0-7]{3,4}", operands[0]))
+
+
+def _check_mv_args(args: List[str]) -> bool:
+    return len(_file_operands(args, frozenset({"-n"})) or []) >= 2
+
+
+def _check_zip_args(args: List[str]) -> bool:
+    operands = _file_operands(args, frozenset({"-j", "-r", "-q", "-0", "-1", "-9"}))
+    return bool(operands and len(operands) >= 2 and operands[0] != "-")
+
+
 _ARGUMENT_POLICIES: Dict[str, Callable[[List[str]], bool]] = {
+    "cp": _check_cp_args,
+    "mkdir": _check_mkdir_args,
+    "chmod": _check_chmod_args,
+    "mv": _check_mv_args,
+    "zip": _check_zip_args,
     "ls": _allow_unrestricted_args,
     "pwd": _allow_unrestricted_args,
     "cat": _allow_unrestricted_args,
@@ -758,7 +801,7 @@ def create_bash_mcp_server(host: str = "localhost", port: int = 8010) -> None:
         command: Annotated[
             str,
             Field(
-                description="Shell command to execute on the Linux system. Only allow-listed base commands are permitted (e.g. ls, cat, grep, find, df, ps). Shell metacharacters, pipes, and chaining operators are blocked. Examples: 'ls -la /home', 'cat /etc/os-release', 'grep -r \"pattern\" /path'."
+                description="Execute one Linux command with literal file paths (no shell expansion, pipes or chaining). Available operations include ls/cat/grep/find/stat/wc, cp [--parents|-p|-n] SOURCE... DEST, mkdir [-p] DIR..., chmod OCTAL_MODE FILE..., mv [-n] SOURCE... DEST, zip [-j|-r|-q|-0|-1|-9] ARCHIVE FILE.... Use cwd for relative paths. Find paths first, then pass explicit names; wildcard patterns are interpreted only by commands such as find."
             ),
         ],
         api_key: Annotated[

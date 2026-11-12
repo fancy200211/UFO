@@ -138,7 +138,22 @@ HardwareAgent:
 
 LinuxAgent:
   default:
+    data_collection:
+      - namespace: LinuxGUI
+        type: http
+        host: "localhost"
+        port: 8011
+        path: "/mcp"
+        api_key_env: "UFO_MCP_API_KEY"
+        reset: false
     action:
+      - namespace: LinuxGUI
+        type: http
+        host: "localhost"
+        port: 8011
+        path: "/mcp"
+        api_key_env: "UFO_MCP_API_KEY"
+        reset: false
       - namespace: BashExecutor
         type: http
         host: "localhost"

@@ -27,6 +27,7 @@ from ufo.agents.processors.strategies.customized_agent_processing_strategy impor
     CustomizedScreenshotCaptureStrategy,
 )
 from ufo.agents.processors.strategies.linux_agent_strategy import (
+    LinuxDesktopCollectionStrategy,
     LinuxActionExecutionStrategy,
     LinuxLLMInteractionStrategy,
     LinuxLoggingMiddleware,
@@ -99,6 +100,8 @@ class LinuxAgentProcessor(CustomizedProcessor):
     """
 
     def _setup_strategies(self) -> None:
+
+        self.strategies[ProcessingPhase.DATA_COLLECTION] = LinuxDesktopCollectionStrategy(fail_fast=False)
 
         self.strategies[ProcessingPhase.LLM_INTERACTION] = LinuxLLMInteractionStrategy(
             fail_fast=True
