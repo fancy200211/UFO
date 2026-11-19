@@ -112,7 +112,11 @@ def get_completions(
             logger.warning("[LATENCY] completion_start agent=%s model=%s", agent_type, api_model)
             try:
                 with tracker.stage("llm.completion"):
-                    response, cost = service.chat_completion(messages, n)
+                    # Streaming keeps slow-but-alive generations alive (read
+                    # timeout applies between chunks) and fails dead requests
+                    # at first-token timeout instead of full-response timeout.
+                    stream = bool(get_ufo_config().system.get("STREAM_RESPONSE", False))
+                    response, cost = service.chat_completion(messages, n, stream=stream)
             finally:
                 logger.warning(
                     "[LATENCY] completion_end agent=%s model=%s elapsed_s=%.3f",

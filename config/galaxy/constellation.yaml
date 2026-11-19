@@ -4,7 +4,7 @@
 # LLM request policy
 MAX_RETRY: 0  # Disable SDK retries
 TIMEOUT: 60  # Connection, write, and connection-pool timeout in seconds
-READ_TIMEOUT: 180  # Wait up to 180 seconds for response data
+READ_TIMEOUT: 120  # With streaming this applies between chunks; only truly hung requests hit it
 
 # Constellation Runtime Settings
 CONSTELLATION_ID: "test_constellation"

@@ -277,25 +277,31 @@ class BaseOpenAIService(BaseService):
 
             if stream:
                 collected_content = [""]
+                usage = None
 
                 for chunk in response:
                     if chunk.choices:
                         delta = chunk.choices[0].delta
                         if delta and delta.content:
                             collected_content[0] += delta.content
-                    else:
+                    if getattr(chunk, "usage", None):
+                        # Providers attach usage to the final chunk, with or
+                        # without an empty choices list.
                         usage = chunk.usage
 
-                prompt_tokens = usage.prompt_tokens
-                completion_tokens = usage.completion_tokens
-
-                cost = self.get_cost_estimator(
-                    self.api_type,
-                    self.model,
-                    self.prices,
-                    prompt_tokens,
-                    completion_tokens,
-                )
+                if usage is not None:
+                    prompt_tokens = usage.prompt_tokens
+                    completion_tokens = usage.completion_tokens
+                    cost = self.get_cost_estimator(
+                        self.api_type,
+                        self.model,
+                        self.prices,
+                        prompt_tokens,
+                        completion_tokens,
+                    )
+                else:
+                    # Some providers omit the usage chunk despite stream_options.
+                    cost = None
                 return collected_content, cost
             else:
                 usage = response.usage
@@ -787,7 +793,7 @@ class OpenAIService(BaseOpenAIService):
             # If the agent type is not "operator", use the OpenAI API directly
             return super()._chat_completion(
                 messages,
-                False,
+                stream,
                 temperature,
                 max_tokens,
                 top_p,

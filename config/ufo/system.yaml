@@ -2,11 +2,12 @@
 
 # LLM Parameters
 MAX_TOKENS: 2000  # The max token limit for the response completion
-MAX_RETRY: 0  # Disable SDK retries; send each model request once
+MAX_RETRY: 3  # SDK retries with backoff; absorbs transient provider black-holes
 TEMPERATURE: 0.0  # The temperature of the model: the lower the value, the more consistent
 TOP_P: 0.0  # The top_p of the model: the lower the value, the more conservative
 TIMEOUT: 60  # Connection, write, and connection-pool timeout in seconds
-READ_TIMEOUT: 180  # Wait up to 180 seconds for response data
+READ_TIMEOUT: 120  # With streaming this applies between chunks; only truly hung requests hit it
+STREAM_RESPONSE: true  # Stream LLM responses; dead requests fail fast, slow-but-alive ones survive
 USE_BACKUP_ENGINE: false  # Do not issue a backup model request after failure
 
 # Control Backend
